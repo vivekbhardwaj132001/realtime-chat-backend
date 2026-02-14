@@ -42,6 +42,7 @@ export const followUser = async (req: AuthRequest, res: Response) => {
     try {
         const currentUserId = req.user.userId;
         const targetUserId = req.params.id;
+        console.log(`[FollowUser] ${currentUserId} -> ${targetUserId}`);
 
         if (currentUserId === targetUserId) {
             res.status(400).json({ message: "Cannot follow yourself" });
@@ -52,20 +53,25 @@ export const followUser = async (req: AuthRequest, res: Response) => {
         const currentUser = await User.findById(currentUserId);
 
         if (!targetUser || !currentUser) {
+            console.log("[FollowUser] User not found");
             res.status(404).json({ message: "User not found" });
             return;
         }
 
         if (!currentUser.following.includes(targetUserId as any)) {
+            console.log("[FollowUser] Adding to following/followers lists");
             currentUser.following.push(targetUserId as any);
             await currentUser.save();
 
             targetUser.followers.push(currentUserId as any);
             await targetUser.save();
+        } else {
+            console.log("[FollowUser] Already following");
         }
 
         res.json({ message: "Followed successfully" });
     } catch (error) {
+        console.error("[FollowUser] Error:", error);
         res.status(500).json({ message: "Error following user" });
     }
 };
@@ -76,6 +82,7 @@ export const unfollowUser = async (req: AuthRequest, res: Response) => {
     try {
         const currentUserId = req.user.userId;
         const targetUserId = req.params.id;
+        console.log(`[UnfollowUser] ${currentUserId} -x-> ${targetUserId}`);
 
         const targetUser = await User.findById(targetUserId);
         const currentUser = await User.findById(currentUserId);
@@ -91,8 +98,10 @@ export const unfollowUser = async (req: AuthRequest, res: Response) => {
         targetUser.followers = targetUser.followers.filter(id => id.toString() !== currentUserId);
         await targetUser.save();
 
+        console.log("[UnfollowUser] Success");
         res.json({ message: "Unfollowed successfully" });
     } catch (error) {
+        console.error("[UnfollowUser] Error:", error);
         res.status(500).json({ message: "Error unfollowing user" });
     }
 };

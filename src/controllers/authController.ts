@@ -34,59 +34,71 @@ export const sendOtp = async (req: Request, res: Response) => {
 
 export const verifyOtp = async (req: Request, res: Response) => {
     try {
-        console.log("verifyOtp body:", req.body);
+        console.log("verifyOtp called. Body:", req.body);
         const { otp } = req.body;
         const phone = req.body.phone || req.body.phoneNumber;
 
         if (!phone) {
+            console.log("verifyOtp: Phone missing");
             res.status(400).json({ message: "Phone number required" });
             return;
         }
 
-        // Strict check for the dummy OTP
-        // Strict check for the dummy OTP
-        console.log(`Debug OTP Check: Received '${otp}' (type: ${typeof otp})`);
+        console.log(`verifyOtp: Verifying ${otp} for ${phone}`);
 
         if (String(otp).trim() !== "123456") {
-            res.status(400).json({ message: `Invalid OTP. Received '${otp}' (type: ${typeof otp}). Expected '123456'` });
+            console.log("verifyOtp: Invalid OTP");
+            res.status(400).json({ message: "Invalid OTP" });
             return;
         }
 
+        console.log("verifyOtp: Finding user...");
         const user = await User.findOne({ phone });
+        console.log("verifyOtp: User found?", user ? "Yes" : "No");
 
         if (user) {
-            // Login
-            const token = jwt.sign(
-                { userId: user._id, username: user.username },
-                JWT_SECRET,
-                { expiresIn: "7d" }
-            );
+            try {
+                console.log("verifyOtp: Signing token...");
+                const token = jwt.sign(
+                    { userId: user._id, username: user.username },
+                    JWT_SECRET,
+                    { expiresIn: "7d" }
+                );
+                console.log("verifyOtp: Token signed");
 
-            res.json({
-                token,
-                isNewUser: false,
-                user: {
-                    id: user._id,
-                    username: user.username,
-                    fullName: user.fullName,
-                    email: user.email,
-                    avatar: user.avatar,
-                    phone: user.phone,
-                    gender: user.gender,
-                    dateOfBirth: user.dateOfBirth
-                }
-            });
+                res.json({
+                    token,
+                    isNewUser: false,
+                    user: {
+                        id: user._id,
+                        username: user.username,
+                        fullName: user.fullName,
+                        email: user.email,
+                        avatar: user.avatar,
+                        phone: user.phone,
+                        gender: user.gender,
+                        dateOfBirth: user.dateOfBirth
+                    }
+                });
+            } catch (jwtError) {
+                console.error("verifyOtp: JWT Error", jwtError);
+                throw jwtError;
+            }
         } else {
-            // Signal to register - Keep phone in response to help frontend pass it to register screen
+            console.log("verifyOtp: New user flow");
             res.json({
                 isNewUser: true,
                 message: "User not found, please register",
-                phone // Return phone so frontend remembers it
+                phone
             });
         }
     } catch (error) {
-        console.error("Error verifying OTP:", error);
-        res.status(500).json({ message: "Error verifying OTP" });
+        console.error("Critical Error verifiesOtp:", error);
+        res.status(500).json({
+            message: "Error verifying OTP",
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined
+        });
     }
 };
 

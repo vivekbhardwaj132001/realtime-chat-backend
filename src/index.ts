@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { initializeSocket } from "./socket";
 import authRoutes from "./routes/authRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
+import socialRoutes from "./routes/socialRoutes";
 import path from "path";
 
 import userRoutes from "./routes/userRoutes";
@@ -29,6 +30,7 @@ mongoose
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/social", socialRoutes);
 app.use("/api/upload", uploadRoutes);
 
 // Serve Uploads

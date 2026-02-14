@@ -1,7 +1,6 @@
 
 import { Server as SocketIOServer } from "socket.io";
 import { Server as HttpServer } from "http";
-import { Message } from "./models/message";
 import { User } from "./models/user";
 
 export const initializeSocket = (httpServer: HttpServer) => {
@@ -38,22 +37,32 @@ export const initializeSocket = (httpServer: HttpServer) => {
             try {
                 const { senderId, receiverId, message, type } = data;
 
-                // Save to DB
-                const newMessage = new Message({
+                // Fetch sender details for the receiver's UI
+                const sender = await User.findById(senderId);
+                const senderName = sender ? sender.fullName : "Unknown";
+                const senderAvatar = sender ? sender.avatar : "";
+
+                // Construct message object (Client will save this locally)
+                const msgPayload = {
                     senderId,
                     receiverId,
                     message,
-                    type: type || 'text'
-                });
-                await newMessage.save();
+                    type: type || 'text',
+                    createdAt: new Date(),
+                    senderName,   // Added for History Screen
+                    senderAvatar  // Added for History Screen
+                };
 
                 // Emit to receiver
-                io.to(receiverId).emit("received_message", newMessage);
+                io.to(receiverId).emit("received_message", msgPayload);
 
-                console.log(`Message saved from ${senderId} to ${receiverId}`);
+                // Optional: Emit back to sender to confirm (or let client handle optimistic UI)
+                // socket.emit("message_sent", msgPayload);
+
+                console.log(`Message relayed from ${senderId} to ${receiverId}`);
 
             } catch (error) {
-                console.error("Error saving message:", error);
+                console.error("Error relaying message:", error);
             }
         });
 
