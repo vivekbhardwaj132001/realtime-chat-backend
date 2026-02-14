@@ -1,4 +1,3 @@
-
 import express from "express";
 import { createServer } from "http";
 import mongoose from "mongoose";
@@ -9,7 +8,6 @@ import authRoutes from "./routes/authRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
 import socialRoutes from "./routes/socialRoutes";
 import path from "path";
-
 import userRoutes from "./routes/userRoutes";
 
 dotenv.config();
@@ -18,15 +16,28 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/realtime_chat_db";
-console.log("MONGO_URI USED:", MONGO_URI);
+// ✅ PORT
+const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 5001;
 
-// Connect to MongoDB
+// ❌ REMOVE fallback (IMPORTANT)
+const MONGO_URI = process.env.MONGO_URI as string;
+
+// ✅ Check if MONGO_URI exists
+if (!MONGO_URI) {
+    console.error("❌ MONGO_URI is missing in .env");
+    process.exit(1);
+}
+
+console.log("🔥 USING MONGO_URI:", MONGO_URI);
+
+// ✅ Connect to MongoDB
 mongoose
     .connect(MONGO_URI)
-    .then(() => console.log(`✅ MongoDB connected to: ${MONGO_URI}`))
-    .catch((err) => console.error("❌ MongoDB connection error:", err));
+    .then(() => console.log("✅ MongoDB connected successfully"))
+    .catch((err) => {
+        console.error("❌ MongoDB connection error:", err);
+        process.exit(1);
+    });
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -37,27 +48,25 @@ app.use("/api/upload", uploadRoutes);
 // Serve Uploads
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
-// Basic route
+// Test route
 app.get("/", (req, res) => {
-    res.send("Realtime Chat Backend is Running");
+    res.send("Realtime Chat Backend is Running 🚀");
 });
 
 const httpServer = createServer(app);
-const io = initializeSocket(httpServer);
+initializeSocket(httpServer);
 
-// Use existing PORT variable
-
-// Listen on 0.0.0.0 (All interfaces) to avoid specific IP binding locks
+// Start server
 const server = httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`\n==================================================`);
-    console.log(`🚀 Server running on Port ${PORT}`);
-    console.log(`👉 Server is accessible at your VPS IP address`);
-    console.log(`==================================================\n`);
+    console.log("\n=======================================");
+    console.log(`🚀 Server running on PORT ${PORT}`);
+    console.log("=======================================\n");
 });
 
-server.on('error', (e: any) => {
-    if (e.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} is already in use! Please stop other running servers.`);
+// Error handling
+server.on("error", (e: any) => {
+    if (e.code === "EADDRINUSE") {
+        console.error(`❌ Port ${PORT} already in use`);
         process.exit(1);
     } else {
         console.error(e);
