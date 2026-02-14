@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Backend Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .status { padding: 10px; border-radius: 5px; color: white; display: inline-block; }
+        .connected { background-color: green; }
+        .disconnected { background-color: red; }
+    </style>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Frontend Connection Test</h1>
+    <div>
+        Status: <span id="status" class="status disconnected">Disconnected</span>
+    </div>
+    <p>Server URL: <strong>http://192.168.1.40:3000</strong></p>
+    <div id="logs"></div>
+
+    <script>
+        const statusSpan = document.getElementById('status');
+        const logsDiv = document.getElementById('logs');
+        
+        // Connect to your backend IP
+        const socket = io("http://192.168.1.40:3000", {
+            transports: ['websocket', 'polling']
+        });
+
+        socket.on("connect", () => {
+            statusSpan.textContent = "Connected!";
+            statusSpan.className = "status connected";
+            log("✅ Socket Connected with ID: " + socket.id);
+        });
+
+        socket.on("disconnect", () => {
+            statusSpan.textContent = "Disconnected";
+            statusSpan.className = "status disconnected";
+            log("❌ Socket Disconnected");
+        });
+
+        socket.on("connect_error", (err) => {
+            log("⚠️ Connection Error: " + err.message);
+        });
+
+        function log(msg) {
+            const p = document.createElement('p');
+            p.textContent = new Date().toLocaleTimeString() + " - " + msg;
+            logsDiv.appendChild(p);
+        }
+    </script>
+</body>
+</html>
