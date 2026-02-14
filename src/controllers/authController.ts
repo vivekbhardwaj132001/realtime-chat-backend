@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User } from "../models/user";
 
@@ -14,16 +13,14 @@ export const sendOtp = async (req: Request, res: Response) => {
             return res.status(400).json({ message: "Phone number required" });
         }
 
-        // Normalize phone (remove +91)
         const normalizedPhone = phone.replace("+91", "").trim();
 
         console.log(`[OTP] Sending 123456 to ${normalizedPhone}`);
 
-        // Check user
+        // Create user if not exists
         let user = await User.findOne({ phone: normalizedPhone });
 
         if (!user) {
-            // Create temporary user
             user = new User({
                 phone: normalizedPhone,
             });
@@ -32,14 +29,18 @@ export const sendOtp = async (req: Request, res: Response) => {
 
         return res.status(200).json({
             message: "OTP sent successfully",
-            otp: "123456", // dummy
+            otp: "123456", // dummy OTP
         });
 
     } catch (error) {
-        console.error("sendOtp error:", error);
-        return res.status(500).json({ message: "Error sending OTP" });
+        console.error("SEND OTP ERROR:", error);
+        return res.status(500).json({
+            message: "Error sending OTP",
+            error: error instanceof Error ? error.message : String(error)
+        });
     }
 };
+
 
 // ================= VERIFY OTP =================
 export const verifyOtp = async (req: Request, res: Response) => {
@@ -51,12 +52,11 @@ export const verifyOtp = async (req: Request, res: Response) => {
             return res.status(400).json({ message: "Phone and OTP required" });
         }
 
-        // Normalize phone
         const normalizedPhone = phone.replace("+91", "").trim();
 
-        console.log(`Verifying OTP for ${normalizedPhone}`);
+        console.log(`VERIFY OTP: ${normalizedPhone} | OTP: ${otp}`);
 
-        // Always accept dummy OTP
+        // Dummy OTP check
         if (String(otp).trim() !== "123456") {
             return res.status(400).json({ message: "Invalid OTP" });
         }
@@ -64,8 +64,9 @@ export const verifyOtp = async (req: Request, res: Response) => {
         // Find user
         let user = await User.findOne({ phone: normalizedPhone });
 
+        // If not exists → create
         if (!user) {
-            // create if not exists (important fix)
+            console.log("Creating new user...");
             user = new User({
                 phone: normalizedPhone,
             });
@@ -82,7 +83,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
         return res.status(200).json({
             message: "OTP verified",
             token,
-            isNewUser: !user.username, // if no profile
+            isNewUser: !user.fullName, // if profile not completed
             user
         });
 
@@ -94,6 +95,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
         });
     }
 };
+
 
 // ================= REGISTER =================
 export const register = async (req: Request, res: Response) => {
@@ -125,8 +127,8 @@ export const register = async (req: Request, res: Response) => {
         user.fullName = fullName;
         user.gender = gender;
         user.country = country;
-        user.bio = bio;
-        user.avatar = avatar;
+        user.bio = bio || "";
+        user.avatar = avatar || "";
 
         await user.save();
 
@@ -145,12 +147,14 @@ export const register = async (req: Request, res: Response) => {
     } catch (error) {
         console.error("REGISTER ERROR:", error);
         return res.status(500).json({
-            message: "Error during registration"
+            message: "Error during registration",
+            error: error instanceof Error ? error.message : String(error)
         });
     }
 };
 
-// ================= LOGIN (OPTIONAL) =================
+
+// ================= LOGIN =================
 export const login = async (req: Request, res: Response) => {
     try {
         const { phone } = req.body;
@@ -173,9 +177,17 @@ export const login = async (req: Request, res: Response) => {
             { expiresIn: "7d" }
         );
 
-        return res.json({ token, user });
+        return res.status(200).json({
+            message: "Login success",
+            token,
+            user
+        });
 
     } catch (error) {
-        return res.status(500).json({ message: "Login error" });
+        console.error("LOGIN ERROR:", error);
+        return res.status(500).json({
+            message: "Login error",
+            error: error instanceof Error ? error.message : String(error)
+        });
     }
 };
