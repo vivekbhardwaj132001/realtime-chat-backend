@@ -20,6 +20,7 @@ app.use(express.json());
 
 const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/realtime_chat_db";
+console.log("MONGO_URI USED:", MONGO_URI);
 
 // Connect to MongoDB
 mongoose
