@@ -83,7 +83,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
         return res.status(200).json({
             message: "OTP verified",
             token,
-            isNewUser: !user.fullName, // if profile not completed
+            isNewUser: !user.fullName, // Check fullName to decide if registration needed
             user
         });
 
