@@ -23,11 +23,11 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 export const updateProfile = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user.userId;
-        const { fullName, bio, gender, country, avatar } = req.body;
+        const { fullName, bio, gender, country, avatar, interests } = req.body;
 
         const user = await User.findByIdAndUpdate(
             userId,
-            { fullName, bio, gender, country, avatar },
+            { fullName, bio, gender, country, avatar, interests },
             { new: true, runValidators: true }
         ).select("-passwordHash");
 
@@ -103,5 +103,39 @@ export const unfollowUser = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error("[UnfollowUser] Error:", error);
         res.status(500).json({ message: "Error unfollowing user" });
+    }
+};
+
+// Get Followers
+export const getFollowers = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user.userId;
+        const user = await User.findById(userId).populate("followers", "username fullName avatar");
+
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
+        res.json(user.followers);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching followers" });
+    }
+};
+
+// Get Following
+export const getFollowing = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user.userId;
+        const user = await User.findById(userId).populate("following", "username fullName avatar");
+
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
+        res.json(user.following);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching following" });
     }
 };

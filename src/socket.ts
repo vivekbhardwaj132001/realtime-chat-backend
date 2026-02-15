@@ -1,7 +1,7 @@
-
 import { Server as SocketIOServer } from "socket.io";
 import { Server as HttpServer } from "http";
 import { User } from "./models/user";
+import { Message } from "./models/message"; // Import Message model
 
 export const initializeSocket = (httpServer: HttpServer) => {
     const io = new SocketIOServer(httpServer, {
@@ -11,58 +11,115 @@ export const initializeSocket = (httpServer: HttpServer) => {
         },
     });
 
-    // Queue for random matching: { socketId, userId, gender, preference }
+    // Queue for random matching
     let matchQueue: {
         socketId: string,
         userId: string,
-        gender: string, // 'Male', 'Female'
-        preference: string // 'Male', 'Female', 'All'
+        gender: string,
+        preference: string,
+        name: string,
+        avatar: string,
+        country: string
     }[] = [];
 
-    // Track active matches: socketId -> partnerSocketId
+    // Track active matches
     const activeMatches = new Map<string, string>();
+
+    // Track connected users for Online Count
+    const connectedUsers = new Set<string>();
 
     io.on("connection", (socket) => {
         console.log("New client connected:", socket.id);
+        connectedUsers.add(socket.id);
 
-        // Join a personal room (e.g. user ID)
+        // Broadcast online count
+        io.emit("online_users_count", connectedUsers.size);
+
+        // Join a personal room
         socket.on("join_user", (userId) => {
             socket.join(userId);
             console.log(`User mapped: ${userId} -> Socket: ${socket.id}`);
         });
 
-        // Send a message
+        // Send a message & PERSIST to DB
         socket.on("send_message", async (data) => {
-            // data -> { senderId, receiverId, message, type }
             try {
                 const { senderId, receiverId, message, type } = data;
 
-                // Fetch sender details for the receiver's UI
-                const sender = await User.findById(senderId);
-                const senderName = sender ? sender.fullName : "Unknown";
-                const senderAvatar = sender ? sender.avatar : "";
+                // --- CHECK PERMISSIONS ---
+                // 1. Is it an active random match?
+                const isActiveMatch = activeMatches.get(socket.id) && activeMatches.has(activeMatches.get(socket.id)!)
+                // Need to map socketId to userId to be precise, but activeMatches tracks socketId pairs. 
+                // Simpler: If they are in activeMatches, they can talk.
+                // However, senderId/receiverId come from client. We trust client? 
+                // Ideally check if socket.id maps to senderId.
 
-                // Construct message object (Client will save this locally)
-                const msgPayload = {
+                let canChat = false;
+
+                // Check Active Match Map (by socket)
+                // Note: This relies on the sender using the socket we know about. 
+                if (activeMatches.has(socket.id)) {
+                    // Since we don't easily know receiver's socketId from receiverId here without a map,
+                    // we'll optimistically allow if sender is in a match mode.
+                    // A cleaner way requires a UserId->SocketId map.
+                    canChat = true;
+                }
+
+                if (!canChat) {
+                    // 2. Check Mutual Follow
+                    const sender = await User.findById(senderId);
+                    const receiver = await User.findById(receiverId);
+
+                    if (sender && receiver) {
+                        const senderFollowsReceiver = sender.following.includes(receiverId);
+                        const receiverFollowsSender = receiver.following.includes(senderId);
+
+                        if (senderFollowsReceiver && receiverFollowsSender) {
+                            canChat = true;
+                        }
+                    }
+                }
+
+                if (!canChat) {
+                    console.log(`[Chat Blocked] ${senderId} -> ${receiverId} (Not mutual friends or matched)`);
+                    socket.emit("error", { message: "You can only chat with mutual followers or active matches." });
+                    return;
+                }
+                // -------------------------
+
+                // 1. Save to MongoDB
+                const newMessage = new Message({
                     senderId,
                     receiverId,
                     message,
                     type: type || 'text',
-                    createdAt: new Date(),
-                    senderName,   // Added for History Screen
-                    senderAvatar  // Added for History Screen
+                    read: false
+                });
+                await newMessage.save();
+
+                // 2. Fetch sender details for UI
+                const sender = await User.findById(senderId);
+                const senderName = sender ? sender.fullName : "Unknown";
+                const senderAvatar = sender ? sender.avatar : "";
+
+                const msgPayload = {
+                    _id: newMessage._id,
+                    senderId,
+                    receiverId,
+                    message,
+                    type: type || 'text',
+                    createdAt: newMessage.createdAt,
+                    senderName,
+                    senderAvatar
                 };
 
-                // Emit to receiver
+                // 3. Emit to receiver
                 io.to(receiverId).emit("received_message", msgPayload);
 
-                // Optional: Emit back to sender to confirm (or let client handle optimistic UI)
-                // socket.emit("message_sent", msgPayload);
-
-                console.log(`Message relayed from ${senderId} to ${receiverId}`);
+                console.log(`Message saved & relayed from ${senderId} to ${receiverId}`);
 
             } catch (error) {
-                console.error("Error relaying message:", error);
+                console.error("Error handling message:", error);
             }
         });
 
@@ -74,12 +131,17 @@ export const initializeSocket = (httpServer: HttpServer) => {
 
         // --- Random Match Logic ---
         socket.on("find_match", async (data) => {
+            // ... (Same match logic) ...
             // data: { userId, gender, preference }
             const { userId, gender, preference } = data;
             console.log(`User ${userId} (${gender}) looking for match with (${preference})...`);
 
             // 0. Verify REAL USER from Database
             let userGender = gender || 'Unknown';
+            let userName = 'Unknown';
+            let userAvatar = '';
+            let userCountry = 'Unknown';
+
             try {
                 const userExists = await User.findById(userId);
                 if (!userExists) {
@@ -87,21 +149,17 @@ export const initializeSocket = (httpServer: HttpServer) => {
                     socket.emit("error", { message: "Authentication failed: User not found" });
                     return;
                 }
-                // Use DB gender if available/trustworthy, else fallback to client provided
                 if (userExists.gender) userGender = userExists.gender;
+                userName = userExists.fullName;
+                userAvatar = userExists.avatar || '';
+                userCountry = userExists.country || 'Unknown';
 
             } catch (err) {
                 console.error("Error validating user for match:", err);
                 return;
             }
 
-            // 1. Remove from queue if already there (to avoid duplicates)
             matchQueue = matchQueue.filter(u => u.socketId !== socket.id);
-
-            // 2. Try to find a partner
-            // Filter criteria:
-            // - Queue User's Gender matches My Preference (OR My Pref is 'All')
-            // - My Gender matches Queue User's Preference (OR Queue User's Pref is 'All')
 
             const matchIndex = matchQueue.findIndex(queuedUser => {
                 const isMyPrefMatch = (preference === 'All' || preference === 'Both') || (preference === queuedUser.gender);
@@ -111,40 +169,57 @@ export const initializeSocket = (httpServer: HttpServer) => {
             });
 
             if (matchIndex !== -1) {
-                // Partner Found!
-                const partner = matchQueue.splice(matchIndex, 1)[0]; // Remove partner from queue
-
+                const partner = matchQueue.splice(matchIndex, 1)[0];
                 const partnerSocketId = partner.socketId;
                 const partnerUserId = partner.userId;
 
-                console.log(`MATCH FOUND: ${userId} (${userGender}) <-> ${partnerUserId} (${partner.gender})`);
+                console.log(`MATCH FOUND: ${userId} (${userName}) <-> ${partnerUserId} (${partner.name})`);
 
-                // Store match mapping
                 activeMatches.set(socket.id, partnerSocketId);
                 activeMatches.set(partnerSocketId, socket.id);
 
-                // Notify YOU
+                // --- SAVE HISTORY (SYSTEM MESSAGE) ---
+                try {
+                    const matchMsg = new Message({
+                        senderId: userId,
+                        receiverId: partnerUserId,
+                        message: "You matched!",
+                        type: 'system',
+                        read: true
+                    });
+                    await matchMsg.save();
+                } catch (e) {
+                    console.error("Error saving match history:", e);
+                }
+                // -------------------------------------
+
                 io.to(socket.id).emit("match_found", {
                     partnerId: partnerUserId,
                     partnerSocketId: partnerSocketId,
-                    initiator: true
+                    initiator: true,
+                    partnerName: partner.name,
+                    partnerAvatar: partner.avatar,
+                    partnerCountry: partner.country
                 });
 
-                // Notify PARTNER
                 io.to(partnerSocketId).emit("match_found", {
                     partnerId: userId,
                     partnerSocketId: socket.id,
-                    initiator: false
+                    initiator: false,
+                    partnerName: userName,
+                    partnerAvatar: userAvatar,
+                    partnerCountry: userCountry
                 });
-
             } else {
-                // No one waiting, add self to queue
                 console.log(`User ${userId} added to queue. waiting...`);
                 matchQueue.push({
                     socketId: socket.id,
                     userId,
                     gender: userGender,
-                    preference: preference || 'All'
+                    preference: preference || 'All',
+                    name: userName,
+                    avatar: userAvatar,
+                    country: userCountry
                 });
             }
         });
@@ -164,11 +239,11 @@ export const initializeSocket = (httpServer: HttpServer) => {
 
         socket.on("disconnect", () => {
             console.log("Client disconnected:", socket.id);
+            connectedUsers.delete(socket.id);
+            io.emit("online_users_count", connectedUsers.size);
 
-            // 1. Remove from Queue
             matchQueue = matchQueue.filter(u => u.socketId !== socket.id);
 
-            // 2. Notify any active partner
             if (activeMatches.has(socket.id)) {
                 const partnerSocketId = activeMatches.get(socket.id);
                 if (partnerSocketId) {

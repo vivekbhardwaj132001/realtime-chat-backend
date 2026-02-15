@@ -9,6 +9,7 @@ import uploadRoutes from "./routes/uploadRoutes";
 import socialRoutes from "./routes/socialRoutes";
 import path from "path";
 import userRoutes from "./routes/userRoutes";
+import messageRoutes from "./routes/messageRoutes";
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ mongoose
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/social", socialRoutes);
+app.use("/api/messages", messageRoutes); // Register Message Routes
 app.use("/api/upload", uploadRoutes);
 
 // Serve Uploads
